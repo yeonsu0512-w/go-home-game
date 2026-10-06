@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>[hidden]{display:none!important}body{margin:0}</style>
+<title>퇴근길 대작전</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=Gowun+Dodum&display=swap">
+<style>
+/* Layout: one centered phone-shaped street screen on a dusk ground; HUD above, lane buttons below. Single dark dusk theme by choice. */
+:root {
+  --dusk: #1b1733;
+  --dusk-2: #2a2350;
+  --sunset: #ff8a4c;
+  --lamp: #ffd479;
+  --ink: #f4efe6;
+  --muted: #a69fc4;
+  --danger: #ff5d6c;
+  --display: "Black Han Sans", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  --body: "Gowun Dodum", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body {
+  background: radial-gradient(120% 80% at 50% 0%, var(--dusk-2), var(--dusk) 70%);
+  color: var(--ink);
+  font-family: var(--body);
+  padding-inline: 16px;
+  padding-block: 16px;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+}
+.wrap { width: 100%; max-width: 440px; display: flex; flex-direction: column; gap: 10px; }
+header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+h1 { font-family: var(--display); font-weight: 400; font-size: 1.9rem; margin: 0; letter-spacing: .02em; color: var(--lamp); text-wrap: balance; }
+.best { color: var(--muted); font-size: .85rem; font-variant-numeric: tabular-nums; }
+.hud { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; align-items: center; font-variant-numeric: tabular-nums; }
+.clock { font-family: var(--display); font-size: 1.5rem; color: var(--ink); grid-row: span 2; }
+.hud .best { text-align: right; }
+.stamina { display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: .8rem; color: var(--muted); }
+.stamina .bar { height: 10px; border-radius: 5px; background: rgba(255,255,255,.12); overflow: hidden; }
+.stamina .fill { height: 100%; width: 100%; background: var(--lamp); transition: background-color .3s; }
+.stamina .fill.low { background: var(--danger); }
+.route { position: relative; height: 34px; }
+.route .bar { position: absolute; left: 0; right: 0; top: 8px; height: 6px; border-radius: 3px; background: rgba(255,255,255,.12); overflow: hidden; }
+.route .fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--sunset), var(--lamp)); }
+.route .stops { position: absolute; left: 0; right: 0; top: 18px; display: flex; justify-content: space-between; font-size: .72rem; color: var(--muted); }
+.stage { position: relative; width: 100%; aspect-ratio: 9 / 13; max-width: 100%; border-radius: 18px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.08); touch-action: none; user-select: none; }
+canvas { display: block; width: 100%; height: 100%; }
+.overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 24px; background: rgba(20,16,40,.74); backdrop-filter: blur(2px); }
+.overlay[hidden], .legend[hidden] { display: none; }
+.overlay h2 { font-family: var(--display); font-weight: 400; font-size: 2.1rem; margin: 0; color: var(--lamp); text-wrap: balance; }
+.overlay p { margin: 0; line-height: 1.6; max-width: 30ch; color: var(--ink); }
+.legend { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; font-size: .82rem; color: var(--muted); text-align: left; }
+.legend b { color: var(--ink); font-weight: 400; }
+button { font-family: var(--display); font-size: 1.15rem; border: 0; border-radius: 999px; padding: 12px 28px; background: var(--sunset); color: #2a1408; cursor: pointer; }
+button:focus-visible { outline: 3px solid var(--lamp); outline-offset: 3px; }
+.controls { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.controls button { background: rgba(255,255,255,.08); color: var(--ink); padding: 14px; font-size: 1.3rem; }
+.controls button:active { background: rgba(255,255,255,.18); }
+.hint { text-align: center; color: var(--muted); font-size: .8rem; margin: 0; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header>
+    <h1>퇴근길 대작전</h1>
+    <span class="best" id="best">최고 기록 없음</span>
+  </header>
+  <div class="hud">
+    <span class="clock" id="clock">18:00</span>
+    <span class="best" id="remain">집까지 2.4km</span>
+    <div class="stamina">
+      <span>남은 기력</span>
+      <div class="bar"><div class="fill" id="stam"></div></div>
+      <span id="stamTxt">100%</span>
+    </div>
+  </div>
+  <div class="route" aria-hidden="true">
+    <div class="bar"><div class="fill" id="fill"></div></div>
+    <div class="stops"><span>회사</span><span>지하철역</span><span>편의점</span><span>우리 집</span></div>
+  </div>
+  <div class="stage" id="stage">
+    <canvas id="cv"></canvas>
+    <div class="overlay" id="overlay">
+      <h2 id="ovTitle">오늘도 고생했어요</h2>
+      <p id="ovText">야근 3일째인 김대리. 기력은 계속 줄어들고, 지칠수록 걸음도 느려져요. 쓰러지기 전에 집까지 데려다 주세요.</p>
+      <div class="legend" id="legend">
+        <span>🧑‍💼 <b>부장님</b> 기력 -25, +20분</span>
+        <span>🍻 <b>회식 권유</b> 기력 -30, +30분</span>
+        <span>💬 <b>업무 카톡</b> 기력 -10</span>
+        <span>💧 <b>물웅덩이</b> 잠깐 느려짐</span>
+        <span>☕ <b>커피</b> 기력 +15, 잠깐 빨라짐</span>
+        <span>🍗 <b>치킨</b> 기력 +35</span>
+      </div>
+      <button id="startBtn" type="button">퇴근하기</button>
+    </div>
+  </div>
+  <div class="controls">
+    <button id="leftBtn" type="button" aria-label="왼쪽으로">◀</button>
+    <button id="rightBtn" type="button" aria-label="오른쪽으로">▶</button>
+  </div>
+  <p class="hint">← → 키, 화면 좌우 터치, 또는 스와이프로 길을 바꿔요</p>
+</div>
+
+<script>
+(() => {
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const stage = document.getElementById('stage');
+  const $ = id => document.getElementById(id);
+  const GOAL = 2400;            // meters from office to home
+  const MPP = 0.28;             // meters walked per scrolled pixel
+  const LANES = 3;
+  const TYPES = {
+    boss:   { emoji: '🧑‍💼', bad: true, dmg: 25, min: 20, say: '김대리, 잠깐 얘기 좀…' },
+    party:  { emoji: '🍻', bad: true, dmg: 30, min: 30, say: '한 잔만 하고 가!' },
+    kakao:  { emoji: '💬', bad: true, dmg: 10, min: 5,  say: '[업무] 이것만 확인 부탁~' },
+    puddle: { emoji: '💧', bad: true, dmg: 5,  min: 0,  slow: true, say: '아… 양말 다 젖었다' },
+    coffee: { emoji: '☕', bad: false, heal: 15, boost: true, say: '카페인 수혈 완료' },
+    chicken:{ emoji: '🍗', bad: false, heal: 35, say: '치킨은 살 안 쪄요' },
+  };
+  const SPAWN = [['boss',22],['party',14],['kakao',20],['puddle',16],['coffee',15],['chicken',7]];
+  const SIGHS = ['집에 가고 싶다…', '발이 천근만근…', '오늘 뭐 했더라…', '눕고 싶다…', '월급날 언제지…', '하아…'];
+
+  let W, H, DPR, roadX, roadW, laneW;
+  let st, raf, last;
+  let best = null;
+  try { best = JSON.parse(localStorage.getItem('gohome-best')); } catch (e) {}
+  showBest();
+
+  function resize() {
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+    const r = stage.getBoundingClientRect();
+    W = r.width; H = r.height;
+    cv.width = W * DPR; cv.height = H * DPR;
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    roadW = W * 0.66; roadX = (W - roadW) / 2; laneW = roadW / LANES;
+    if (!st) reset();
+    draw();
+  }
+  window.addEventListener('resize', resize);
+
+  function reset() {
+    st = {
+      mode: 'ready', dist: 0, minutes: 0, stamina: 100,
+      lane: 1, px: 1, objs: [], nextSpawn: 50, scroll: 0,
+      boost: 0, slow: 0, flash: 0, bubble: null, invuln: 0, t: 0, nextSigh: 200,
+      buildings: makeBuildings(),
+    };
+    updateHud();
+  }
+
+  function makeBuildings() {
+    const arr = [];
+    for (let side = 0; side < 2; side++) {
+      let y = -40;
+      while (y < 1400) {
+        const h = 70 + Math.random() * 90;
+        arr.push({ side, y, h, hue: Math.random(), wins: Array.from({ length: 8 }, () => Math.random() < 0.55) });
+        y += h + 10;
+      }
+    }
+    return arr;
+  }
+
+  function pickType() {
+    const total = SPAWN.reduce((a, [, w]) => a + w, 0);
+    let r = Math.random() * total;
+    for (const [k, w] of SPAWN) { if ((r -= w) < 0) return k; }
+    return 'boss';
+  }
+
+  function spawn() {
+    const progress = st.dist / GOAL;
+    const lanes = [0, 1, 2].sort(() => Math.random() - 0.5);
+    const n = Math.random() < 0.25 + progress * 0.4 ? 2 : 1;   // never block all three lanes
+    for (let i = 0; i < n; i++) st.objs.push({ type: pickType(), lane: lanes[i], y: -40, hit: false });
+    st.nextSpawn = st.dist + (60 - progress * 22) + Math.random() * 30;
+  }
+
+  function move(dir) {
+    if (!st || st.mode !== 'play') return;
+    st.lane = Math.max(0, Math.min(LANES - 1, st.lane + dir));
+  }
+
+  function start() {
+    reset();
+    st.mode = 'play';
+    $('overlay').hidden = true;
+    last = performance.now();
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(loop);
+  }
+
+  function loop(now) {
+    const dt = Math.min((now - last) / 16.67, 3);
+    last = now;
+    update(dt);
+    draw();
+    if (st.mode === 'play') raf = requestAnimationFrame(loop);
+  }
+
+  function say(text, t = 70) { st.bubble = { text, t }; }
+
+  function update(dt) {
+    st.t += dt;
+    const progress = st.dist / GOAL;
+    const tired = st.stamina / 100;
+    let speed = (2.6 + progress * 1.6) * (0.5 + 0.5 * tired);   // the more tired, the slower the walk
+    if (st.boost > 0) { speed *= 1.7; st.boost -= dt; }
+    if (st.slow > 0) { speed *= 0.45; st.slow -= dt; }
+    st.scroll += speed * dt;
+    st.dist += speed * dt * MPP;
+    st.minutes += dt * 0.012;
+    st.stamina -= dt * 0.03;                                     // the day keeps draining you
+    st.px += (st.lane - st.px) * Math.min(1, (0.12 + 0.18 * tired) * dt);
+    if (st.flash > 0) st.flash -= dt;
+    if (st.invuln > 0) st.invuln -= dt;
+    if (st.bubble) { st.bubble.t -= dt; if (st.bubble.t <= 0) st.bubble = null; }
+    if (st.t > st.nextSigh && !st.bubble) { say(SIGHS[Math.floor(Math.random() * SIGHS.length)], 90); st.nextSigh = st.t + 300 + Math.random() * 200; }
+
+    if (st.dist >= st.nextSpawn && st.dist < GOAL - 60) spawn();
+
+    const py = H * 0.78;
+    for (const o of st.objs) {
+      o.y += speed * dt;
+      if (o.hit || o.lane !== st.lane || Math.abs(o.y - py) > 28) continue;
+      const T = TYPES[o.type];
+      if (T.bad && st.invuln > 0) continue;
+      o.hit = true;
+      if (T.dmg) { st.stamina -= T.dmg; if (T.dmg >= 20) { st.flash = 18; st.invuln = 45; } }
+      if (T.min) st.minutes += T.min;
+      if (T.slow) st.slow = 70;
+      if (T.heal) st.stamina = Math.min(100, st.stamina + T.heal);
+      if (T.boost) { st.boost = 150; st.slow = 0; }
+      say(T.say);
+    }
+    st.objs = st.objs.filter(o => o.y < H + 60 && !(o.hit && !TYPES[o.type].slow));
+
+    if (st.stamina <= 0) { st.stamina = 0; return end(false); }
+    if (st.dist >= GOAL) return end(true);
+    updateHud();
+  }
+
+  function clockText(m) {
+    const total = 18 * 60 + Math.round(m);
+    const h = Math.floor(total / 60) % 24, mm = total % 60;
+    return String(h).padStart(2, '0') + ':' + String(mm).padStart(2, '0');
+  }
+
+  function updateHud() {
+    $('clock').textContent = clockText(st.minutes);
+    const left = Math.max(0, GOAL - st.dist);
+    $('remain').textContent = '집까지 ' + (left / 1000).toFixed(1) + 'km';
+    const s = Math.max(0, Math.round(st.stamina));
+    $('stam').style.width = s + '%';
+    $('stam').classList.toggle('low', s < 30);
+    $('stamTxt').textContent = s + '%';
+    $('fill').style.width = Math.min(100, st.dist / GOAL * 100) + '%';
+  }
+
+  function end(win) {
+    st.mode = win ? 'win' : 'over';
+    updateHud();
+    draw();
+    const arrive = clockText(st.minutes);
+    $('legend').hidden = true;
+    if (win) {
+      const isBest = best === null || st.minutes < best;
+      if (isBest) { best = Math.round(st.minutes); try { localStorage.setItem('gohome-best', JSON.stringify(best)); } catch (e) {} }
+      showBest();
+      $('ovTitle').textContent = arrive + ' 집 도착';
+      $('ovText').textContent = verdict(st.minutes, st.stamina) + (isBest ? ' 최고 기록이에요!' : '');
+      $('startBtn').textContent = '내일도 퇴근하기';
+    } else {
+      const left = ((GOAL - st.dist) / 1000).toFixed(1);
+      $('ovTitle').textContent = '기력 소진';
+      $('ovText').textContent = arrive + ', 집을 ' + left + 'km 남기고 버스정류장 벤치에서 잠들었어요.';
+      $('startBtn').textContent = '다시 퇴근하기';
+    }
+    $('overlay').hidden = false;
+    $('startBtn').focus();
+  }
+
+  function verdict(m, s) {
+    if (s < 15) return '현관문 열자마자 신발 신은 채로 쓰러졌어요.';
+    if (m < 50) return '씻고 저녁 먹고 넷플릭스까지 볼 수 있어요.';
+    if (m < 90) return '씻고 누우면 딱 좋은 시간이에요.';
+    return '많이 늦었지만, 그래도 집이 최고예요.';
+  }
+
+  function showBest() {
+    $('best').textContent = best === null ? '최고 기록 없음' : '최고 기록 ' + clockText(best) + ' 도착';
+  }
+
+  // ---------- drawing ----------
+  function draw() {
+    const progress = st.dist / GOAL;
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, mix('#3a2f5e', '#141026', progress));
+    g.addColorStop(1, mix('#4a3a66', '#1d1838', progress));
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+
+    // buildings, lights going off one by one as the night deepens
+    const sideW = roadX - 6;
+    for (const b of st.buildings) {
+      const y = ((b.y + st.scroll * 0.9) % 1400 + 1400) % 1400 - 140;
+      const x = b.side === 0 ? 2 : W - sideW - 2;
+      ctx.fillStyle = mix('#2c2550', '#1a1533', b.hue);
+      roundRect(x, y, sideW, b.h, 6); ctx.fill();
+      ctx.fillStyle = 'rgba(255, 212, 121, 0.75)';
+      const ww = sideW / 5, wh = b.h / 10;
+      for (let i = 0; i < 8; i++) {
+        if (!b.wins[i] || (i / 8) < progress * 0.6) continue;
+        ctx.fillRect(x + ww * (1 + (i % 2) * 2), y + wh * (1.5 + Math.floor(i / 2) * 2), ww, wh);
+      }
+    }
+
+    // road
+    ctx.fillStyle = '#26223a'; ctx.fillRect(roadX, 0, roadW, H);
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillRect(roadX, 0, 3, H); ctx.fillRect(roadX + roadW - 3, 0, 3, H);
+    ctx.fillStyle = 'rgba(255, 212, 121, 0.45)';
+    const dash = 46, off = st.scroll % dash;
+    for (let l = 1; l < LANES; l++) {
+      const x = roadX + laneW * l - 2;
+      for (let y = -dash + off; y < H; y += dash) ctx.fillRect(x, y, 4, 24);
+    }
+
+    // street lamps
+    const lampGap = 220, lOff = st.scroll % lampGap;
+    for (let y = -lampGap + lOff; y < H + lampGap; y += lampGap) {
+      for (const lx of [roadX, roadX + roadW]) {
+        const rg = ctx.createRadialGradient(lx, y, 4, lx, y, 90);
+        rg.addColorStop(0, 'rgba(255, 212, 121, 0.33)');
+        rg.addColorStop(1, 'rgba(255, 212, 121, 0)');
+        ctx.fillStyle = rg; ctx.fillRect(lx - 90, y - 90, 180, 180);
+        ctx.fillStyle = '#ffd479'; ctx.beginPath(); ctx.arc(lx, y, 4, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    // home appears near the finish
+    const homeY = H * 0.78 - (GOAL - st.dist) / MPP;
+    if (homeY > -120) {
+      ctx.fillStyle = '#ff8a4c';
+      roundRect(roadX + 20, homeY - 70, roadW - 40, 70, 10); ctx.fill();
+      ctx.fillStyle = '#2a1408';
+      ctx.font = `24px "Black Han Sans", sans-serif`;
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('🏠 우리 집', W / 2, homeY - 35);
+    }
+
+    // objects
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (const o of st.objs) {
+      const T = TYPES[o.type];
+      const x = roadX + laneW * (o.lane + 0.5);
+      if (T.bad && T.dmg >= 20) {
+        ctx.fillStyle = 'rgba(255, 93, 108, 0.18)';
+        ctx.beginPath(); ctx.arc(x, o.y, 26, 0, Math.PI * 2); ctx.fill();
+      } else if (!T.bad) {
+        ctx.fillStyle = 'rgba(255, 212, 121, 0.2)';
+        ctx.beginPath(); ctx.arc(x, o.y, 24 + Math.sin(st.t * 0.15) * 3, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.font = `${T.slow ? 40 : 34}px sans-serif`;
+      ctx.globalAlpha = o.hit ? 0.4 : 1;
+      ctx.fillText(T.emoji, x, o.y);
+      ctx.globalAlpha = 1;
+    }
+
+    // the tired worker
+    const px = roadX + laneW * (st.px + 0.5), py = H * 0.78;
+    const blink = st.invuln > 0 && Math.floor(st.invuln / 4) % 2 === 0;
+    if (!blink) drawWorker(px, py);
+
+    // speech bubble
+    if (st.bubble) {
+      ctx.font = `14px "Gowun Dodum", sans-serif`;
+      const tw = ctx.measureText(st.bubble.text).width + 20;
+      const bx = Math.min(Math.max(px - tw / 2, 8), W - tw - 8), by = py - 82;
+      ctx.fillStyle = '#f4efe6'; roundRect(bx, by, tw, 28, 14); ctx.fill();
+      ctx.fillStyle = '#1b1733'; ctx.fillText(st.bubble.text, bx + tw / 2, by + 14);
+    }
+
+    if (st.flash > 0) { ctx.fillStyle = `rgba(255, 93, 108, ${st.flash / 40})`; ctx.fillRect(0, 0, W, H); }
+
+    // vignette closes in as stamina runs out
+    const fatigue = 1 - st.stamina / 100;
+    if (fatigue > 0.5) {
+      const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.25, W / 2, H / 2, H * 0.75);
+      v.addColorStop(0, 'rgba(10,8,20,0)');
+      v.addColorStop(1, `rgba(10,8,20,${(fatigue - 0.5) * 1.6})`);
+      ctx.fillStyle = v; ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  // Seen from behind, slightly from above: slumped shoulders, head hanging, briefcase dragging.
+  function drawWorker(x, y) {
+    const tired = 1 - st.stamina / 100;            // 0 fresh … 1 collapsing
+    const walking = st.mode === 'play';
+    const pace = st.boost > 0 ? 0.35 : 0.16 + 0.08 * (1 - tired);
+    const step = walking ? Math.sin(st.t * pace) : 0;
+    const sway = walking ? Math.sin(st.t * pace * 0.5) * (2 + tired * 5) : 0;
+    const droop = 4 + tired * 9;                    // how far the head hangs forward
+
+    ctx.save();
+    ctx.translate(x + sway, y);
+
+    // shadow
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath(); ctx.ellipse(0, 26, 17, 5, 0, 0, Math.PI * 2); ctx.fill();
+
+    // legs (dark trousers), shuffling
+    ctx.fillStyle = '#1f2233';
+    ctx.fillRect(-8, 6 + step * 3, 6, 18 - step * 3);
+    ctx.fillRect(2, 6 - step * 3, 6, 18 + step * 3);
+    ctx.fillStyle = '#0e0e16';
+    ctx.fillRect(-9, 22 + Math.max(0, step) * 0, 8, 4);
+    ctx.fillRect(1, 22, 8, 4);
+
+    // briefcase dragging low on the right
+    ctx.save();
+    ctx.translate(15, 10 + tired * 6);
+    ctx.rotate(0.25 + tired * 0.35 + step * 0.08);
+    ctx.fillStyle = '#6b4a2e';
+    roundRect(-3, 0, 14, 11, 2); ctx.fill();
+    ctx.fillStyle = '#4a321f'; ctx.fillRect(1, -3, 6, 3);
+    ctx.restore();
+
+    // body: navy suit, shoulders slumping down and in
+    const sh = tired * 4;
+    ctx.fillStyle = '#34406b';
+    ctx.beginPath();
+    ctx.moveTo(-13 + sh, -12 + sh);
+    ctx.quadraticCurveTo(0, -18 + sh, 13 - sh, -12 + sh);
+    ctx.lineTo(10, 9); ctx.lineTo(-10, 9); ctx.closePath(); ctx.fill();
+    // arms hanging
+    ctx.strokeStyle = '#34406b'; ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-12 + sh, -9 + sh); ctx.lineTo(-15 + sh * 0.5, 8 + tired * 4 - step * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(12 - sh, -9 + sh); ctx.lineTo(15, 8 + tired * 4 + step * 2); ctx.stroke();
+
+    // head hanging forward (seen from behind: hair)
+    ctx.fillStyle = '#e8c3a0';
+    ctx.beginPath(); ctx.arc(0, -18 + droop * 0.4, 9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1a1a22';
+    ctx.beginPath(); ctx.arc(0, -20 + droop * 0.4, 9, Math.PI * 1.05, Math.PI * 1.95 + 0.4); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, -21 + droop * 0.4, 9, 7, 0, 0, Math.PI * 2); ctx.fill();
+    // loosened red tie end flapping off the side
+    ctx.strokeStyle = '#c8433f'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.moveTo(-4, -10 + sh); ctx.quadraticCurveTo(-10, -4 + sh, -8 + step * 2, 2 + sh); ctx.stroke();
+
+    // sweat drop and Zzz when exhausted
+    if (tired > 0.35) {
+      ctx.fillStyle = '#8fd0ff';
+      const sd = (st.t * 0.6) % 20;
+      ctx.beginPath(); ctx.ellipse(11, -22 + sd * 0.6, 2.2, 3.2, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    if (tired > 0.6) {
+      ctx.fillStyle = 'rgba(244,239,230,0.85)';
+      ctx.font = `bold 12px "Gowun Dodum", sans-serif`;
+      const zt = (st.t * 0.03) % 1;
+      ctx.globalAlpha = 1 - zt;
+      ctx.fillText('z', 14 + zt * 8, -30 - zt * 14);
+      ctx.font = `bold 15px "Gowun Dodum", sans-serif`;
+      ctx.fillText('Z', 22 + zt * 8, -42 - zt * 14);
+      ctx.globalAlpha = 1;
+    }
+    // coffee buzz
+    if (st.boost > 0) {
+      ctx.strokeStyle = 'rgba(255,212,121,0.8)'; ctx.lineWidth = 2;
+      for (const s of [-1, 1]) {
+        ctx.beginPath(); ctx.moveTo(s * 18, -24); ctx.lineTo(s * 24, -30); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(s * 19, -16); ctx.lineTo(s * 26, -17); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  function roundRect(x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function mix(a, b, t) {
+    t = Math.max(0, Math.min(1, t));
+    const pa = [1, 3, 5].map(i => parseInt(a.slice(i, i + 2), 16)), pb = [1, 3, 5].map(i => parseInt(b.slice(i, i + 2), 16));
+    return 'rgb(' + pa.map((v, i) => Math.round(v + (pb[i] - v) * t)).join(',') + ')';
+  }
+
+  // ---------- input ----------
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') { move(-1); e.preventDefault(); }
+    else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') { move(1); e.preventDefault(); }
+    else if ((e.key === ' ' || e.key === 'Enter') && st.mode !== 'play') { start(); e.preventDefault(); }
+  });
+  $('leftBtn').addEventListener('click', () => move(-1));
+  $('rightBtn').addEventListener('click', () => move(1));
+  $('startBtn').addEventListener('click', start);
+
+  let tx = null;
+  stage.addEventListener('pointerdown', e => { tx = e.clientX; });
+  stage.addEventListener('pointerup', e => {
+    if (tx === null || st.mode !== 'play') { tx = null; return; }
+    const dx = e.clientX - tx;
+    if (Math.abs(dx) > 30) move(dx > 0 ? 1 : -1);
+    else {
+      const r = stage.getBoundingClientRect();
+      move(e.clientX - r.left < r.width / 2 ? -1 : 1);
+    }
+    tx = null;
+  });
+
+  resize();
+  if (document.fonts) document.fonts.ready.then(() => { if (st.mode !== 'play') draw(); });
+})();
+</script>
+</body>
+</html>
